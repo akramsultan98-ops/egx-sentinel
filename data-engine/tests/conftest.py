@@ -2,8 +2,13 @@
 
 Every test pins an explicit clock. Nothing here reads the wall clock, so the
 suite behaves identically on any machine at any time.
+
+Database fixtures require ``EGX_TEST_DATABASE_URL`` pointing at a **throwaway**
+database; the tables are truncated between tests. Without it the integration
+tests skip rather than fail, so the pure-logic suite still runs anywhere.
 """
 
+import os
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -65,3 +70,88 @@ def zero_fee_policy():
 def liquid_gate():
     """Generous gate so liquidity is not the binding constraint by accident."""
     return TradedValueLiquidityGate(max_participation_fraction=Decimal("1"))
+
+
+# --- database fixtures --------------------------------------------------
+
+# Every table carrying test data, truncated between tests.
+DATA_TABLES = (
+    "risk_plans",
+    "validation_results",
+    "signals",
+    "executions",
+    "portfolio_positions",
+    "market_snapshots",
+    "daily_bars",
+    "fundamentals",
+    "news_events",
+    "portfolio",
+    "instruments",
+)
+
+
+@pytest.fixture(scope="session")
+def database_url():
+    url = os.environ.get("EGX_TEST_DATABASE_URL")
+    if not url:
+        pytest.skip("EGX_TEST_DATABASE_URL is not set")
+    pytest.importorskip("psycopg")
+    return url
+
+
+@pytest.fixture(scope="session")
+def migrated_database(database_url):
+    from egx_engine.db.connection import connect
+    from egx_engine.db.migrate import migrate
+
+    with connect(database_url) as conn:
+        migrate(conn)
+    return database_url
+
+
+@pytest.fixture
+def conn(migrated_database):
+    """A clean, uncommitted connection against a freshly truncated schema."""
+    from egx_engine.db.connection import connect
+
+    with connect(migrated_database) as connection:
+        with connection.cursor() as cur:
+            cur.execute(
+                f"TRUNCATE {', '.join(DATA_TABLES)} RESTART IDENTITY CASCADE"
+            )
+        connection.commit()
+        yield connection
+        connection.rollback()
+
+
+@pytest.fixture
+def repo(conn):
+    from egx_engine.db.repository import Repository
+
+    return Repository(conn)
+
+
+@pytest.fixture
+def instrument(repo, conn):
+    """A single registered instrument matching the snapshot fixture.
+
+    Committed, so a test that rolls back is measuring only its own writes.
+    """
+    repo.upsert_instrument(
+        instrument_id="TEST",
+        ticker="TEST",
+        name="Test Instrument",
+        source="fixture",
+        source_updated_at=NOW,
+    )
+    conn.commit()
+    return "TEST"
+
+
+@pytest.fixture
+def portfolio_id(repo, conn, instrument):
+    identifier = repo.create_portfolio(
+        name="test-portfolio", initial_capital_egp=Decimal("5000")
+    )
+    conn.commit()
+    return identifier

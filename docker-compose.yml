@@ -6,9 +6,12 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-egx_sentinel}
       POSTGRES_USER: ${POSTGRES_USER:-egx}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    # The schema is applied by the migration runner
+    # (`python -m egx_engine.db.migrate`), not by an init-time mount: an
+    # entrypoint script only ever runs on an empty volume, so it cannot carry a
+    # database forward across schema changes.
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./db/001_initial_schema.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 10s

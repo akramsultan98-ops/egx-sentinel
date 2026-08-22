@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "egx-engine"
+version = "0.1.0"
+description = "Deterministic EGX market-data validation and risk engine for EGX Sentinel."
+requires-python = ">=3.11"
+
+# Runtime dependencies only. Anything needed purely for testing, linting, or
+# local development belongs in [project.optional-dependencies].
+dependencies = [
+    "pydantic>=2.10,<3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8,<9",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+# src layout is put on sys.path here so `pytest` works from data-engine/
+# without an external PYTHONPATH and without requiring an editable install.
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-q"

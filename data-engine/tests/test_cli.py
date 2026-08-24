@@ -21,7 +21,7 @@ from egx_engine.cli import (
 from egx_engine.db.repository import Repository
 from egx_engine.providers import BAR_DIRECTORY, SNAPSHOT_FILE, ManualFileProvider
 from egx_engine.provider import UnconfiguredProvider
-from egx_engine.universe import UniverseError
+from egx_engine.universe import UniverseError, load_universe_csv
 
 from conftest import NOW, make_bars, make_snapshot
 
@@ -71,13 +71,27 @@ def provider(manual_dir):
 # --- load-universe --------------------------------------------------------
 
 
-def test_shipped_universe_loads_but_enables_nothing(conn):
+def test_shipped_universe_loads_exactly_what_the_file_declares(conn):
+    """Loading reports the file honestly and enables nothing extra."""
+    entries = load_universe_csv(default_universe_file())
+    expected = sorted(e.ticker for e in entries if e.telda_available)
+
     result = load_universe_command(conn, default_universe_file())
 
-    assert result["loaded"] > 0
-    assert result["telda_available"] == 0
-    assert result["telda_available_tickers"] == []
-    assert Repository(conn).get_universe(telda_available=True) == []
+    assert result["loaded"] == len(entries)
+    assert result["telda_available"] == len(expected)
+    assert result["telda_available_tickers"] == expected
+
+    stored = sorted(r["ticker"] for r in Repository(conn).get_universe(telda_available=True))
+    assert stored == expected
+
+
+def test_every_enabled_instrument_carries_a_verification_date(conn):
+    """The database must not hold an availability claim nobody dated."""
+    load_universe_command(conn, default_universe_file())
+
+    enabled = Repository(conn).get_universe(telda_available=True)
+    assert all(row["telda_verified_at"] is not None for row in enabled)
 
 
 def test_a_verified_file_enables_its_instruments(conn, verified_universe_file):

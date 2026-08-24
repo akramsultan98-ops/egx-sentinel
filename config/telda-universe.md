@@ -16,12 +16,16 @@ instrument_id,ticker,name,asset_type,sector,telda_available,telda_verified_on
 
 Only `telda_available = true` instruments enter the ranking pipeline.
 
-### The file ships with nothing enabled
-Every row in the committed CSV carries `telda_available=false` and no
-verification date. The repository lists EGX-listed tickers as *candidates for
-verification*; it does not — and must not — assert that any of them is
-purchasable through Telda. Only the operator can establish that, by opening the
-app and looking.
+### The file is the operator's verified record
+The committed CSV holds the universe the operator confirmed in the Telda Invest
+app on **2026-08-25**: 243 instruments enabled, plus any instrument that is
+registered but not available.
+
+It began as a candidates-only list with nothing enabled, because nobody had
+checked the app yet. It is now a verified record, and that distinction matters:
+the repository still does not — and must not — assert Telda availability on its
+own. Every enabled row exists because a human opened the app and looked. Re-verify
+when Telda changes its offering, and move the date when you do.
 
 To enable an instrument, set `telda_available=true` **and** fill in
 `telda_verified_on` with the date you checked. The two travel together and are
@@ -46,6 +50,20 @@ image, mount it and pass `--file`.
 Rows that are present but disabled are still useful: they register the
 instrument, which is what lets a `NOT_IN_TELDA_UNIVERSE` refusal be recorded
 with a full audit trail rather than failing as an unknown symbol.
+
+### Symbols carried verbatim
+Three entries are transcribed exactly as the operator supplied them and have
+**not** been normalised, because correcting a ticker is indistinguishable from
+inventing one:
+
+- `EF IH` — contains a space; no exchange symbol does. Almost certainly a
+  reading error.
+- `IRAX.CA`, `PACH.CA`, `TORA.CA` — carry a `.CA` (Cairo) vendor suffix that the
+  other 239 symbols do not.
+
+None of them can match a real feed while written this way, so they are inert
+rather than dangerous: a quote will simply never arrive for them. They should be
+corrected at the source and reloaded.
 
 ### The gate
 `egx_engine.universe.check_universe` runs inside the decision pipeline, before

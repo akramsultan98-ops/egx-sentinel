@@ -68,16 +68,43 @@ def test_verified_and_available_passes():
 # --- the seed file -------------------------------------------------------
 
 
-def test_shipped_universe_claims_no_availability():
-    """The repository must never assert Telda membership nobody verified."""
+def test_shipped_universe_never_claims_unverified_availability():
+    """The invariant that survives an operator-verified file.
+
+    The seed used to enable nothing at all, because nobody had checked the
+    Telda app yet. It now carries an operator's verified list, so "zero
+    enabled" is no longer the property worth asserting. What must never change
+    is that availability and a verification date travel together: an enabled
+    row without a date is the shape this system exists to make impossible.
+    """
     entries = load_universe_csv(default_universe_file())
 
     assert entries, "the shipped universe file should not be empty"
-    assert all(not e.telda_available for e in entries)
-    assert all(e.telda_verified_at is None for e in entries)
-    assert all(check_universe(
-        {"telda_available": e.telda_available, "telda_verified_at": e.telda_verified_at}
-    ).ok is False for e in entries)
+
+    for entry in entries:
+        if entry.telda_available:
+            assert entry.telda_verified_at is not None, entry.ticker
+        else:
+            # A disabled row may never open the gate, dated or not.
+            assert check_universe(
+                {"telda_available": False, "telda_verified_at": entry.telda_verified_at}
+            ).ok is False
+
+
+def test_shipped_universe_gate_matches_the_file_exactly():
+    """The gate opens for precisely the rows the operator marked, no others."""
+    entries = load_universe_csv(default_universe_file())
+
+    opened = [
+        e.ticker
+        for e in entries
+        if check_universe(
+            {"telda_available": e.telda_available, "telda_verified_at": e.telda_verified_at}
+        ).ok
+    ]
+    marked = [e.ticker for e in entries if e.telda_available]
+
+    assert opened == marked
 
 
 def test_a_verified_row_loads(tmp_path):

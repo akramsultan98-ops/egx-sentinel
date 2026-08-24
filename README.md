@@ -28,7 +28,8 @@ Market Data → n8n → Python Validation/Risk Engine → Claude Decision Layer 
 - `data-engine/src/egx_engine/db/` transactional persistence and the migration runner
 - `data-engine/src/egx_engine/pipeline.py` the audited validate -> size -> persist flow
 - `data-engine/src/egx_engine/cli.py` the operator command line
-- `db/migrations/` ordered, checksummed PostgreSQL migrations
+- `data-engine/src/egx_engine/migrations/` ordered, checksummed PostgreSQL migrations (package data)
+- `data-engine/src/egx_engine/data/telda-universe.csv` the seed universe (package data)
 - `config/` risk policy, and the operator-verified Telda universe (`.csv` + rules)
 - `docs/` data-source and build specifications
 - `prompts/` Claude decision prompts
@@ -75,9 +76,18 @@ export DATABASE_URL=postgresql://egx:...@127.0.0.1:5433/egx_sentinel
 python -m egx_engine.db.migrate
 ```
 
-Migrations in `db/migrations/` are forward-only, run in numeric order, and each runs in
-its own transaction. Every applied migration's checksum is recorded: editing one that
-has already run is an error, not a silent divergence. Never modify a database by hand.
+Migrations are forward-only, run in numeric order, and each runs in its own
+transaction. Every applied migration's checksum is recorded: editing one that has
+already run is an error, not a silent divergence. Never modify a database by hand.
+
+The `.sql` files ship **inside the package**, at
+`data-engine/src/egx_engine/migrations/`, and are resolved with
+`importlib.resources`. They are part of the distribution rather than of the
+repository, so a source checkout, an editable install, a wheel and the container
+all find the same files. `python -m egx_engine.db.migrate --check-files`
+verifies they are present without touching a database; the image build runs it,
+so a distribution packaged without its migrations fails the build rather than
+the first deployment.
 
 The database tests need a **throwaway** database and are skipped without one:
 ```bash

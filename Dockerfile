@@ -4,9 +4,11 @@
 # provider credentials: the model is chosen in n8n and reaches the engine only
 # as structured JSON.
 #
-# The repository layout is preserved inside the image because two code paths
-# locate files by walking upward from the package: db/migrations (the migration
-# runner) and config/telda-universe.csv (the universe loader).
+# The migrations and the seed universe travel inside the installed package
+# (see [tool.setuptools.package-data]), so the image needs nothing but the
+# distribution itself. Copying the repository layout in alongside it would not
+# help: an installed package cannot resolve paths relative to a repository root
+# it shares no ancestor with.
 
 FROM python:3.12-slim
 
@@ -20,8 +22,8 @@ COPY data-engine/pyproject.toml ./data-engine/
 COPY data-engine/src ./data-engine/src
 RUN pip install --no-cache-dir ./data-engine
 
-COPY db ./db
-COPY config ./config
+# Fail the build rather than ship an image whose migrations are missing.
+RUN python -m egx_engine.db.migrate --check-files
 
 # Drop privileges: nothing here needs root at runtime.
 RUN useradd --create-home --uid 10001 sentinel && chown -R sentinel:sentinel /app

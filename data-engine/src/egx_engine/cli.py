@@ -26,6 +26,7 @@ import argparse
 import json
 import sys
 from datetime import date, datetime, timedelta, timezone
+from importlib import resources
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -42,7 +43,11 @@ from .providers import get_provider
 from .settings import SettingsError, load_settings
 from .universe import UniverseError, load_universe_csv
 
-UNIVERSE_FILE = Path("config") / "telda-universe.csv"
+# The seed universe ships as package data for the same reason the migrations do:
+# a path relative to the repository root is not something an installed package
+# can resolve. Operators override it with `--file`.
+UNIVERSE_DIR_NAME = "data"
+UNIVERSE_FILENAME = "telda-universe.csv"
 
 # How much history to request by default. Comfortably more than ATR needs, so
 # holidays and suspended sessions cannot silently starve the calculation.
@@ -53,13 +58,24 @@ PROVIDER_UNHEALTHY = "PROVIDER_UNHEALTHY"
 
 
 def default_universe_file() -> Path:
-    """Locate ``config/telda-universe.csv`` relative to this checkout."""
-    here = Path(__file__).resolve()
-    for parent in here.parents:
-        candidate = parent / UNIVERSE_FILE
-        if candidate.is_file():
-            return candidate
-    raise UniverseError(f"could not locate {UNIVERSE_FILE}")
+    """Locate the seed universe shipped with this package.
+
+    Depends on nothing above the package, so it resolves identically however
+    ``egx_engine`` was installed.
+    """
+    try:
+        package_root = Path(str(resources.files("egx_engine")))
+    except (ModuleNotFoundError, TypeError) as exc:  # pragma: no cover - defensive
+        raise UniverseError(f"could not locate the egx_engine package: {exc}") from exc
+
+    path = package_root / UNIVERSE_DIR_NAME / UNIVERSE_FILENAME
+    if not path.is_file():
+        raise UniverseError(
+            f"the seed universe is missing from the installed package: expected "
+            f"{path}. The distribution was built without its package data "
+            f"(see [tool.setuptools.package-data] in pyproject.toml)."
+        )
+    return path
 
 
 # Decimals and datetimes become strings, never floats — shared with the HTTP

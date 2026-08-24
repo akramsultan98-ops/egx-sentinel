@@ -26,6 +26,13 @@ egx = "egx_engine.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+# The SQL migrations and the seed universe are part of the distribution, not of
+# the repository that happens to contain it. Without this an installed package
+# has no migrations at all, and the runner can only fail — which is exactly the
+# bug this declaration exists to prevent.
+[tool.setuptools.package-data]
+egx_engine = ["migrations/*.sql", "data/*.csv"]
+
 [tool.pytest.ini_options]
 markers = [
     "integration: requires a live PostgreSQL (set EGX_TEST_DATABASE_URL)",

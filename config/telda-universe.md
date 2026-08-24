@@ -6,7 +6,9 @@ EGX-listed alone is not sufficient.
 
 ## V1 approach
 Maintain a manually verified universe from the instruments visible in the Telda
-Invest app. It lives in `config/telda-universe.csv` with one row per instrument:
+Invest app. It ships as package data at
+`data-engine/src/egx_engine/data/telda-universe.csv`, with one row per
+instrument:
 
 ```text
 instrument_id,ticker,name,asset_type,sector,telda_available,telda_verified_on
@@ -33,8 +35,13 @@ enforced in three places:
 Loading the file is how the universe reaches the database:
 
 ```bash
-python -m egx_engine.cli load-universe --file config/telda-universe.csv
+python -m egx_engine.cli load-universe                    # the shipped seed
+python -m egx_engine.cli load-universe --file /path/to/your.csv   # your own list
 ```
+
+In the container the seed travels inside the installed package, so
+`load-universe` works with no arguments. To load a list you maintain outside the
+image, mount it and pass `--file`.
 
 Rows that are present but disabled are still useful: they register the
 instrument, which is what lets a `NOT_IN_TELDA_UNIVERSE` refusal be recorded

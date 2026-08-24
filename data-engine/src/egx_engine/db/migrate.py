@@ -9,17 +9,41 @@ Rules:
   already run is an error, not a silent divergence — write a new one instead.
 
 Run with ``python -m egx_engine.db.migrate`` (uses ``DATABASE_URL``).
+
+WHERE THE FILES LIVE
+--------------------
+The ``.sql`` files ship **inside this package**, at ``egx_engine/migrations``,
+and are located with :mod:`importlib.resources`.
+
+They used to live at the repository root and be found by walking upward from
+``__file__`` looking for a ``db/migrations`` directory. That only works when
+the package is imported out of a source checkout, where the repository root
+happens to be an ancestor. It is not a property the package can rely on: ``pip
+install`` puts the package under ``site-packages``, which shares no ancestor
+with wherever the repository was copied, so the walk could never succeed. The
+container exposed it, but every non-editable install had the same bug.
+
+Resolving through the package removes the guess entirely. Source checkout,
+editable install, wheel and container all resolve to one deterministic
+location — the directory next to this module's package — because the files are
+part of the distribution rather than of the repository that happens to contain
+it.
 """
 
 from __future__ import annotations
 
 import hashlib
 import re
+import sys
 from dataclasses import dataclass
+from importlib import resources
 from pathlib import Path
 
 from .connection import connect
 from .errors import PersistenceError
+
+#: Directory inside the ``egx_engine`` package holding the ``.sql`` files.
+MIGRATIONS_DIR_NAME = "migrations"
 
 MIGRATION_PATTERN = re.compile(r"^(\d{4})_([A-Za-z0-9_\-]+)\.sql$")
 
@@ -34,13 +58,26 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 
 
 def default_migrations_dir() -> Path:
-    """Locate ``db/migrations`` relative to this checkout."""
-    here = Path(__file__).resolve()
-    for parent in here.parents:
-        candidate = parent / "db" / "migrations"
-        if candidate.is_dir():
-            return candidate
-    raise PersistenceError("could not locate db/migrations")
+    """Locate the migrations shipped with this package.
+
+    Depends on nothing above the package, so it resolves identically however
+    ``egx_engine`` was installed.
+    """
+    try:
+        package_root = Path(str(resources.files("egx_engine")))
+    except (ModuleNotFoundError, TypeError) as exc:  # pragma: no cover - defensive
+        raise PersistenceError(
+            f"could not locate the egx_engine package: {exc}"
+        ) from exc
+
+    directory = package_root / MIGRATIONS_DIR_NAME
+    if not directory.is_dir():
+        raise PersistenceError(
+            f"migrations are missing from the installed package: expected "
+            f"{directory}. The distribution was built without its package data "
+            f"(see [tool.setuptools.package-data] in pyproject.toml)."
+        )
+    return directory
 
 
 @dataclass(frozen=True)
@@ -133,7 +170,31 @@ def migrate(conn, directory: Path | None = None) -> list[int]:
     return applied
 
 
-def main() -> int:  # pragma: no cover - CLI entry point
+def check_files() -> list[Migration]:
+    """Verify the migrations resolve and parse, without touching a database.
+
+    Run at image-build time so a distribution packaged without its ``.sql``
+    files fails the build instead of failing the first deployment.
+    """
+    directory = default_migrations_dir()
+    found = discover(directory)
+    if not found:
+        raise PersistenceError(f"no migrations found in {directory}")
+    return found
+
+
+def main(argv: list[str] | None = None) -> int:  # pragma: no cover - CLI entry point
+    argv = sys.argv[1:] if argv is None else argv
+
+    if "--check-files" in argv:
+        found = check_files()
+        print(
+            f"migrations OK: {len(found)} file(s) in {default_migrations_dir()}",
+            "->",
+            ", ".join(f"{m.version:04d}" for m in found),
+        )
+        return 0
+
     with connect() as conn:
         applied = migrate(conn)
     if applied:

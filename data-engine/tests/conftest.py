@@ -9,17 +9,50 @@ tests skip rather than fail, so the pure-logic suite still runs anywhere.
 """
 
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
 
 from egx_engine.config import RiskPolicy
-from egx_engine.models import MarketSnapshot, PortfolioState
+from egx_engine.models import DailyBar, MarketSnapshot, PortfolioState
 from egx_engine.liquidity import TradedValueLiquidityGate
 
 # A Wednesday inside an EGX trading session (12:00 Cairo == 10:00 UTC).
 NOW = datetime(2026, 3, 11, 10, 0, 0, tzinfo=timezone.utc)
+
+
+def make_bars(
+    count: int,
+    *,
+    ticker: str = "TEST",
+    close: str = "10",
+    spread: str = "0.20",
+    source: str = "fixture",
+    end=None,
+) -> list[DailyBar]:
+    """A flat series with a constant daily range.
+
+    Constant range makes the ATR exactly ``spread``, so tests can assert on
+    derived levels arithmetically instead of against a magic number.
+    """
+    last_session = end or (NOW.date() - timedelta(days=1))
+    price = Decimal(close)
+    half = Decimal(spread) / 2
+
+    return [
+        DailyBar(
+            ticker=ticker,
+            session_date=last_session - timedelta(days=offset),
+            open=price,
+            high=price + half,
+            low=price - half,
+            close=price,
+            volume=100_000,
+            source=source,
+        )
+        for offset in reversed(range(count))
+    ]
 
 
 def make_snapshot(**overrides) -> MarketSnapshot:
@@ -133,7 +166,10 @@ def repo(conn):
 
 @pytest.fixture
 def instrument(repo, conn):
-    """A single registered instrument matching the snapshot fixture.
+    """A single registered, Telda-verified instrument matching the snapshot fixture.
+
+    Telda availability is a hard gate as of Phase 2, so the default fixture
+    carries it; tests that care about the gate withdraw it explicitly.
 
     Committed, so a test that rolls back is measuring only its own writes.
     """
@@ -143,6 +179,8 @@ def instrument(repo, conn):
         name="Test Instrument",
         source="fixture",
         source_updated_at=NOW,
+        telda_available=True,
+        telda_verified_at=NOW,
     )
     conn.commit()
     return "TEST"

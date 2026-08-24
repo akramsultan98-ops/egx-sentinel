@@ -1,0 +1,9 @@
+instrument_id,ticker,name,asset_type,sector,telda_available,telda_verified_on
+COMI,COMI,Commercial International Bank (Egypt),EQUITY,,false,
+ETEL,ETEL,Telecom Egypt,EQUITY,,false,
+HRHO,HRHO,EFG Holding,EQUITY,,false,
+SWDY,SWDY,Elsewedy Electric,EQUITY,,false,
+ABUK,ABUK,Abu Qir Fertilizers and Chemical Industries,EQUITY,,false,
+EAST,EAST,Eastern Company,EQUITY,,false,
+TMGH,TMGH,Talaat Moustafa Group Holding,EQUITY,,false,
+ESRS,ESRS,Ezz Steel,EQUITY,,false,

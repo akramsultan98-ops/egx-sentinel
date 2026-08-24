@@ -5,14 +5,20 @@ from decimal import Decimal
 
 import pytest
 
-from egx_engine.config import RiskPolicy
+from egx_engine.config import DEFAULT_RISK_POLICY, RiskPolicy
 from egx_engine.db.repository import Repository
+from egx_engine.levels import INSUFFICIENT_HISTORY, derive_levels
 from egx_engine.liquidity import TradedValueLiquidityGate, UnconfiguredLiquidityGate
-from egx_engine.pipeline import PERSISTENCE_UNAVAILABLE, evaluate_and_persist
+from egx_engine.pipeline import (
+    LEVELS_UNAVAILABLE,
+    PERSISTENCE_UNAVAILABLE,
+    evaluate_and_persist,
+)
 from egx_engine.risk import DATA_NOT_VERIFIED_NO_TRADE, build_risk_plan
+from egx_engine.universe import NOT_IN_TELDA_UNIVERSE
 from egx_engine.validator import validate_snapshot
 
-from conftest import NOW, make_snapshot
+from conftest import NOW, make_bars, make_snapshot
 
 pytestmark = pytest.mark.integration
 
@@ -213,3 +219,125 @@ def test_rerunning_the_same_tick_does_not_duplicate_market_data(conn, portfolio_
         assert cur.fetchone()[0] == 1
         cur.execute("SELECT count(*) FROM risk_plans")
         assert cur.fetchone()[0] == 2
+
+
+# --- Phase 2: the Telda universe gate ------------------------------------
+
+
+def withdraw_availability(conn, instrument_id="TEST"):
+    Repository(conn).upsert_instrument(
+        instrument_id=instrument_id, ticker=instrument_id, name="Test Instrument",
+        source="fixture", source_updated_at=NOW, telda_available=False,
+    )
+    conn.commit()
+
+
+def test_an_unavailable_instrument_is_refused(conn, portfolio_id):
+    withdraw_availability(conn)
+
+    record = run(conn, portfolio_id)
+
+    assert record.plan.action == "NO_TRADE"
+    assert record.plan.reason == NOT_IN_TELDA_UNIVERSE
+    assert record.is_actionable is False
+
+
+def test_a_universe_refusal_is_fully_audited(conn, portfolio_id):
+    """A rejection must carry the same evidence chain as a BUY."""
+    withdraw_availability(conn)
+
+    record = run(conn, portfolio_id)
+    assert record.persisted is True
+
+    trail = Repository(conn).get_decision_audit_trail(record.risk_plan_id)
+    assert trail["decision"]["reason"] == NOT_IN_TELDA_UNIVERSE
+    assert trail["validation"]["status"] == "VALID"
+    assert trail["source_data"]["snapshot_id"] == record.snapshot_id
+    assert trail["decision"]["equity_egp_at_decision"] == Decimal("5000.0000")
+
+
+def test_data_validity_outranks_the_universe_gate(conn, portfolio_id):
+    """Both gates fail; the report names the more fundamental failure."""
+    withdraw_availability(conn)
+
+    record = run(
+        conn,
+        portfolio_id,
+        snapshot=make_snapshot(
+            freshness_seconds=5, source_timestamp=NOW - timedelta(hours=3)
+        ),
+    )
+
+    assert record.plan.reason == DATA_NOT_VERIFIED_NO_TRADE
+
+
+# --- Phase 2: derived levels ---------------------------------------------
+
+
+def test_underivable_levels_are_recorded_as_a_rejection(conn, portfolio_id):
+    record = run(
+        conn,
+        portfolio_id,
+        stop_loss=None,
+        target=None,
+        levels_reason=INSUFFICIENT_HISTORY,
+    )
+
+    assert record.persisted is True
+    assert record.plan.action == "NO_TRADE"
+    assert record.plan.reason == INSUFFICIENT_HISTORY
+    assert record.plan.shares == 0
+    assert record.is_actionable is False
+
+    trail = Repository(conn).get_decision_audit_trail(record.risk_plan_id)
+    assert trail["decision"]["reason"] == INSUFFICIENT_HISTORY
+    assert trail["validation"]["status"] == "VALID"
+
+
+def test_missing_levels_without_a_reason_still_refuse(conn, portfolio_id):
+    record = run(conn, portfolio_id, stop_loss=None, target=None)
+    assert record.plan.reason == LEVELS_UNAVAILABLE
+    assert record.is_actionable is False
+
+
+def test_a_half_specified_setup_is_refused(conn, portfolio_id):
+    """A stop without a target must never be sized."""
+    record = run(conn, portfolio_id, target=None)
+    assert record.plan.action == "NO_TRADE"
+    assert record.plan.reason == LEVELS_UNAVAILABLE
+
+
+def test_data_validity_outranks_the_levels_gate(conn, portfolio_id):
+    record = run(
+        conn,
+        portfolio_id,
+        stop_loss=None,
+        target=None,
+        levels_reason=INSUFFICIENT_HISTORY,
+        snapshot=make_snapshot(
+            freshness_seconds=5, source_timestamp=NOW - timedelta(hours=3)
+        ),
+    )
+
+    assert record.plan.reason == DATA_NOT_VERIFIED_NO_TRADE
+
+
+def test_derived_levels_produce_a_persisted_buy(conn, portfolio_id):
+    """The whole Phase 2 chain: bars -> ATR -> levels -> risk -> committed BUY."""
+    snapshot = make_snapshot(last_price=Decimal("10"))
+    levels = derive_levels(snapshot.last_price, make_bars(20, spread="0.20"))
+    assert levels.ok is True
+
+    record = run(
+        conn,
+        portfolio_id,
+        snapshot=snapshot,
+        stop_loss=levels.stop_loss,
+        target=levels.target,
+        risk_policy=DEFAULT_RISK_POLICY,
+    )
+
+    assert record.plan.action == "BUY"
+    assert record.is_actionable is True
+    assert record.plan.stop_loss == levels.stop_loss
+    assert record.plan.risk_reward >= DEFAULT_RISK_POLICY.min_risk_reward

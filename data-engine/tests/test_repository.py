@@ -17,9 +17,10 @@ from egx_engine.db.repository import InsufficientCashError, Repository
 from egx_engine.liquidity import TradedValueLiquidityGate
 from egx_engine.models import PortfolioState
 from egx_engine.risk import build_risk_plan
+from egx_engine.universe import NOT_IN_TELDA_UNIVERSE, UniverseEntry, check_universe
 from egx_engine.validator import validate_snapshot
 
-from conftest import NOW, make_snapshot
+from conftest import NOW, make_bars, make_snapshot
 
 pytestmark = pytest.mark.integration
 
@@ -493,3 +494,159 @@ def test_naive_execution_time_is_refused(repo, portfolio_id):
             execution_time=datetime(2026, 3, 11, 10, 0, 0),
             idempotency_key="naive",
         )
+
+
+# --- Telda universe -----------------------------------------------------
+
+
+def test_instrument_defaults_to_unavailable(repo, conn):
+    repo.upsert_instrument(
+        instrument_id="NEW", ticker="NEW", name="New Instrument",
+        source="fixture", source_updated_at=NOW,
+    )
+    conn.commit()
+
+    row = repo.get_instrument("NEW")
+    assert row["telda_available"] is False
+    assert row["telda_verified_at"] is None
+    assert check_universe(row).reason == NOT_IN_TELDA_UNIVERSE
+
+
+def test_unknown_instrument_reads_as_none(repo):
+    assert repo.get_instrument("GHOST") is None
+
+
+def test_availability_cannot_be_asserted_without_verification(repo, conn):
+    """The database itself refuses an unverified availability claim."""
+    with pytest.raises(psycopg.errors.CheckViolation):
+        repo.upsert_instrument(
+            instrument_id="NEW", ticker="NEW", name="New Instrument",
+            source="fixture", source_updated_at=NOW,
+            telda_available=True,
+        )
+    conn.rollback()
+
+
+def test_a_metadata_refresh_does_not_revoke_availability(repo, conn, instrument):
+    """None means 'leave it alone', so a routine upsert cannot drop the gate."""
+    repo.upsert_instrument(
+        instrument_id="TEST", ticker="TEST", name="Renamed Instrument",
+        source="fixture", source_updated_at=NOW,
+    )
+    conn.commit()
+
+    row = repo.get_instrument("TEST")
+    assert row["name"] == "Renamed Instrument"
+    assert row["telda_available"] is True
+    assert row["telda_verified_at"] == NOW
+
+
+def test_availability_can_be_withdrawn_explicitly(repo, conn, instrument):
+    repo.upsert_instrument(
+        instrument_id="TEST", ticker="TEST", name="Test Instrument",
+        source="fixture", source_updated_at=NOW, telda_available=False,
+    )
+    conn.commit()
+
+    assert repo.get_instrument("TEST")["telda_available"] is False
+
+
+def test_get_universe_filters_by_availability(repo, conn, instrument):
+    repo.upsert_instrument(
+        instrument_id="OTHER", ticker="OTHER", name="Other",
+        source="fixture", source_updated_at=NOW,
+    )
+    conn.commit()
+
+    assert {r["ticker"] for r in repo.get_universe()} == {"TEST", "OTHER"}
+    assert [r["ticker"] for r in repo.get_universe(telda_available=True)] == ["TEST"]
+    assert [r["ticker"] for r in repo.get_universe(telda_available=False)] == ["OTHER"]
+
+
+def test_load_universe_writes_entries(repo, conn):
+    entries = [
+        UniverseEntry("AAA", "AAA", "Alpha", "EQUITY", "Banks", True, NOW),
+        UniverseEntry("BBB", "BBB", "Beta", "EQUITY", None, False, None),
+    ]
+    assert repo.load_universe(entries, source="operator") == 2
+    conn.commit()
+
+    assert repo.get_instrument("AAA")["telda_available"] is True
+    assert repo.get_instrument("BBB")["telda_available"] is False
+    assert [r["ticker"] for r in repo.get_universe(telda_available=True)] == ["AAA"]
+
+
+def test_load_universe_refuses_an_unverified_claim(repo, conn):
+    entries = [UniverseEntry("AAA", "AAA", "Alpha", "EQUITY", None, True, None)]
+    with pytest.raises(PersistenceError, match="without a verification date"):
+        repo.load_universe(entries, source="operator")
+    conn.rollback()
+
+
+# --- daily bars ---------------------------------------------------------
+
+
+def test_daily_bars_round_trip(repo, conn, instrument):
+    assert repo.save_daily_bars("TEST", make_bars(5)) == 5
+    conn.commit()
+
+    stored = repo.get_daily_bars("TEST", source="fixture")
+    assert len(stored) == 5
+    assert stored == sorted(stored, key=lambda b: b.session_date)
+    assert stored[0].ticker == "TEST"
+    assert stored[0].close == Decimal("10.000000")
+
+
+def test_saving_no_bars_is_a_no_op(repo, instrument):
+    assert repo.save_daily_bars("TEST", []) == 0
+
+
+def test_refetching_a_range_corrects_rather_than_duplicates(repo, conn, instrument):
+    repo.save_daily_bars("TEST", make_bars(3, close="10"))
+    conn.commit()
+    repo.save_daily_bars("TEST", make_bars(3, close="11"))
+    conn.commit()
+
+    stored = repo.get_daily_bars("TEST", source="fixture")
+    assert len(stored) == 3
+    assert all(bar.close == Decimal("11.000000") for bar in stored)
+
+
+def test_two_providers_keep_separate_series(repo, conn, instrument):
+    repo.save_daily_bars("TEST", make_bars(3, source="fixture", close="10"))
+    repo.save_daily_bars("TEST", make_bars(3, source="other", close="99"))
+    conn.commit()
+
+    assert len(repo.get_daily_bars("TEST", source="fixture")) == 3
+    assert all(
+        bar.close == Decimal("99.000000")
+        for bar in repo.get_daily_bars("TEST", source="other")
+    )
+
+
+def test_limit_returns_the_most_recent_bars_oldest_first(repo, conn, instrument):
+    repo.save_daily_bars("TEST", make_bars(10))
+    conn.commit()
+
+    everything = repo.get_daily_bars("TEST", source="fixture")
+    recent = repo.get_daily_bars("TEST", source="fixture", limit=3)
+
+    assert len(recent) == 3
+    assert [b.session_date for b in recent] == [b.session_date for b in everything[-3:]]
+
+
+def test_daily_bars_can_be_bounded_by_date(repo, conn, instrument):
+    bars = make_bars(5)
+    repo.save_daily_bars("TEST", bars)
+    conn.commit()
+
+    window = repo.get_daily_bars(
+        "TEST", source="fixture", start=bars[1].session_date, end=bars[3].session_date
+    )
+    assert [b.session_date for b in window] == [b.session_date for b in bars[1:4]]
+
+
+def test_bars_for_an_unregistered_instrument_are_refused(repo, conn):
+    with pytest.raises(PersistenceError, match="could not save daily bars"):
+        repo.save_daily_bars("GHOST", make_bars(2))
+    conn.rollback()

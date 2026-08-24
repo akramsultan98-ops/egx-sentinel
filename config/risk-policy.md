@@ -26,7 +26,8 @@ not independently define the numbers.
 ## Hard gates
 A BUY is forbidden when any of the following is true:
 - market data is stale, missing, contradictory, or unverified
-- the instrument is not in the validated Telda universe
+- the instrument is not in the validated Telda universe (enforced in
+  `pipeline.py` against `instruments.telda_available`)
 - liquidity is insufficient for the intended position
 - risk/reward is below 1:2 before or after fees
 - the proposed entry is not anchored to the validated last traded price
@@ -63,6 +64,29 @@ be replaced with the verified Telda/broker schedule before real-money use.
 Liquidity is a hard gate with a fail-closed default. Until a verified market-data
 provider supplies the inputs, `UnconfiguredLiquidityGate` returns
 `LIQUIDITY_NOT_VERIFIED` and no BUY can be produced.
+
+## Stop-loss and target derivation
+`data-engine/src/egx_engine/levels.py` derives both levels deterministically
+from daily bars, so the system can originate a setup rather than only score one
+a human supplied:
+
+```text
+atr    = Wilder ATR over 14 completed sessions   # needs 15 bars
+stop   = last_price - 2 * atr                    # rounded down to 0.001
+target = smallest price whose reward/risk clears min_risk_reward NET of fees
+```
+
+If ATR cannot be computed — fewer than 15 bars, or a perfectly flat series —
+the result is a refusal (`INSUFFICIENT_HISTORY`, `ATR_NOT_POSITIVE`) that is
+persisted as a NO_TRADE. A stop is never guessed.
+
+The target solves for *net* reward-to-risk rather than gross. A target set at
+exactly `entry + R x risk` always lands below `R` once fees are taken out, so a
+gross formula would make every derived setup fail the gate it was built to
+satisfy. The derivation assumes the proportional part of the fee model; if
+`min_fee_egp` is raised above zero the real fee can exceed the modelled one and
+the risk engine — which re-checks net reward-to-risk itself — will reject the
+setup. Levels propose; `risk.py` decides.
 
 ## Decision hierarchy
 1. Data validity

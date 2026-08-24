@@ -13,7 +13,7 @@ decision — snapshot, verdict, plan — lands as one unit or not at all.
 from __future__ import annotations
 
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from importlib.metadata import PackageNotFoundError, version as package_version
 from typing import Any, Iterable
@@ -23,7 +23,7 @@ from psycopg.types.json import Jsonb
 from pydantic import ValidationError as PydanticValidationError
 
 from ..config import DataPolicy, RiskPolicy
-from ..models import MarketSnapshot, PortfolioState, RiskPlan
+from ..models import DailyBar, MarketSnapshot, PortfolioState, RiskPlan
 from ..validator import ValidationResult
 from .errors import (
     DuplicateExecutionError,
@@ -95,21 +95,39 @@ class Repository:
         asset_type: str = "EQUITY",
         currency: str = "EGP",
         status: str = "ACTIVE",
+        telda_available: bool | None = None,
+        telda_verified_at: datetime | None = None,
     ) -> str:
+        """Register or refresh an instrument.
+
+        ``telda_available`` and ``telda_verified_at`` are three-state on
+        update: ``None`` leaves the stored value alone, so a routine metadata
+        refresh can never silently revoke — or silently grant — Telda
+        availability. Pass ``False`` explicitly to withdraw it.
+        """
+        verified_at = (
+            None
+            if telda_verified_at is None
+            else require_utc(telda_verified_at, "telda_verified_at")
+        )
         with self.conn.cursor() as cur:
             cur.execute(
                 """
                 INSERT INTO instruments (instrument_id, ticker, isin, name, exchange,
                                          sector, asset_type, currency, status, source,
-                                         source_updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                         source_updated_at, telda_available,
+                                         telda_verified_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        COALESCE(%s, FALSE), %s)
                 ON CONFLICT (instrument_id) DO UPDATE SET
                     ticker = EXCLUDED.ticker,
                     name = EXCLUDED.name,
                     sector = EXCLUDED.sector,
                     status = EXCLUDED.status,
                     source = EXCLUDED.source,
-                    source_updated_at = EXCLUDED.source_updated_at
+                    source_updated_at = EXCLUDED.source_updated_at,
+                    telda_available = COALESCE(%s, instruments.telda_available),
+                    telda_verified_at = COALESCE(%s, instruments.telda_verified_at)
                 RETURNING instrument_id
                 """,
                 (
@@ -124,9 +142,77 @@ class Repository:
                     status,
                     source,
                     require_utc(source_updated_at, "source_updated_at"),
+                    telda_available,
+                    verified_at,
+                    telda_available,
+                    verified_at,
                 ),
             )
             return cur.fetchone()[0]
+
+    # -- Telda universe ---------------------------------------------------
+
+    _INSTRUMENT_COLUMNS = (
+        "instrument_id ticker isin name exchange sector asset_type currency status "
+        "source source_updated_at telda_available telda_verified_at"
+    ).split()
+
+    def get_instrument(self, instrument_id: str) -> dict[str, Any] | None:
+        """Return one instrument row, or ``None`` when it is not registered."""
+        with self.conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT {', '.join(self._INSTRUMENT_COLUMNS)}
+                  FROM instruments
+                 WHERE instrument_id = %s
+                """,
+                (instrument_id,),
+            )
+            row = cur.fetchone()
+        if row is None:
+            return None
+        return dict(zip(self._INSTRUMENT_COLUMNS, row))
+
+    def get_universe(self, *, telda_available: bool | None = None) -> list[dict[str, Any]]:
+        """List registered instruments, optionally filtered by Telda availability."""
+        sql = f"SELECT {', '.join(self._INSTRUMENT_COLUMNS)} FROM instruments"
+        params: tuple | None = None
+        if telda_available is not None:
+            sql += " WHERE telda_available = %s"
+            params = (telda_available,)
+        sql += " ORDER BY ticker"
+
+        with self.conn.cursor() as cur:
+            cur.execute(sql, params)
+            return [dict(zip(self._INSTRUMENT_COLUMNS, row)) for row in cur.fetchall()]
+
+    def load_universe(self, entries: Iterable[Any], *, source: str) -> int:
+        """Upsert operator-verified universe entries. Returns the row count.
+
+        Availability is written from the file every time, including ``False``:
+        the file is the operator's record of what they verified, so removing a
+        ticker's availability there must take effect here.
+        """
+        loaded = 0
+        for entry in entries:
+            if entry.telda_available and entry.telda_verified_at is None:
+                raise PersistenceError(
+                    f"{entry.ticker} claims Telda availability without a verification "
+                    "date; refusing to store an unverified claim"
+                )
+            self.upsert_instrument(
+                instrument_id=entry.instrument_id,
+                ticker=entry.ticker,
+                name=entry.name,
+                asset_type=entry.asset_type,
+                sector=entry.sector,
+                source=source,
+                source_updated_at=datetime.now(timezone.utc),
+                telda_available=entry.telda_available,
+                telda_verified_at=entry.telda_verified_at,
+            )
+            loaded += 1
+        return loaded
 
     # -- market snapshots -------------------------------------------------
 
@@ -213,6 +299,104 @@ class Repository:
             "source_timestamp freshness_seconds validation_status"
         ).split()
         return MarketSnapshot(**dict(zip(keys, row)))
+
+    # -- daily bars -------------------------------------------------------
+
+    def save_daily_bars(self, instrument_id: str, bars: Iterable[DailyBar]) -> int:
+        """Upsert historical bars. Returns the number written.
+
+        The primary key is ``(instrument_id, session_date, source)``, so two
+        providers keep separate series and re-fetching an overlapping range
+        corrects rather than duplicates.
+        """
+        rows = [
+            (
+                instrument_id,
+                bar.session_date,
+                bar.open,
+                bar.high,
+                bar.low,
+                bar.close,
+                bar.volume,
+                bar.source,
+            )
+            for bar in bars
+        ]
+        if not rows:
+            return 0
+
+        try:
+            with self.conn.cursor() as cur:
+                cur.executemany(
+                    """
+                    INSERT INTO daily_bars (instrument_id, session_date, open, high,
+                                            low, close, volume, source)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (instrument_id, session_date, source) DO UPDATE SET
+                        open = EXCLUDED.open,
+                        high = EXCLUDED.high,
+                        low = EXCLUDED.low,
+                        close = EXCLUDED.close,
+                        volume = EXCLUDED.volume
+                    """,
+                    rows,
+                )
+        except psycopg.Error as exc:
+            raise PersistenceError(f"could not save daily bars: {exc}") from exc
+
+        return len(rows)
+
+    def get_daily_bars(
+        self,
+        instrument_id: str,
+        *,
+        source: str,
+        start: date | None = None,
+        end: date | None = None,
+        limit: int | None = None,
+    ) -> list[DailyBar]:
+        """Read one provider's bar series, oldest first.
+
+        ``source`` is required, not optional. Two providers may disagree about
+        the same session, and silently blending their series would corrupt any
+        volatility measure computed from it.
+
+        ``limit`` returns the *most recent* N bars, still oldest-first, which is
+        the order indicator maths expects.
+        """
+        conditions = ["b.instrument_id = %s", "b.source = %s"]
+        params: list[Any] = [instrument_id, source]
+
+        if start is not None:
+            conditions.append("b.session_date >= %s")
+            params.append(start)
+        if end is not None:
+            conditions.append("b.session_date <= %s")
+            params.append(end)
+
+        order = "DESC" if limit is not None else "ASC"
+        sql = f"""
+            SELECT i.ticker, b.session_date, b.open, b.high, b.low, b.close,
+                   b.volume, b.source
+              FROM daily_bars b
+              JOIN instruments i ON i.instrument_id = b.instrument_id
+             WHERE {' AND '.join(conditions)}
+             ORDER BY b.session_date {order}
+        """
+        if limit is not None:
+            sql += " LIMIT %s"
+            params.append(limit)
+
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute(sql, tuple(params))
+                rows = cur.fetchall()
+        except psycopg.Error as exc:
+            raise PersistenceError(f"could not read daily bars: {exc}") from exc
+
+        keys = "ticker session_date open high low close volume source".split()
+        bars = [DailyBar(**dict(zip(keys, row))) for row in rows]
+        return list(reversed(bars)) if limit is not None else bars
 
     # -- validation results -----------------------------------------------
 

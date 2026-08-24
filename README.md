@@ -106,5 +106,61 @@ Until a licensed feed is authorised, `MARKET_DATA_PROVIDER=manual` is the only
 provider that returns data, and it is validated exactly like a vendor feed
 would be. `unconfigured` (the default) refuses outright.
 
+## The MVP: n8n → Sentinel → Telegram
+
+n8n orchestrates; Sentinel decides. One endpoint connects them.
+
+```bash
+docker compose up -d postgres
+docker compose run --rm sentinel python -m egx_engine.db.migrate
+docker compose up -d sentinel
+```
+
+`POST /decide` takes machine-supplied quotes plus AI research and returns the
+decision. The same request works through the CLI:
+
+```bash
+python -m egx_engine.cli decide < request.json
+```
+
+### The rule that makes this safe
+**Machines supply numbers. The AI supplies words.**
+
+`entry`, `stop_loss`, `target`, `shares`, `risk_egp` and the BUY/NO_TRADE
+verdict are computed by the engine from validated market data. The research
+object is untrusted input: it is scanned for price- and size-shaped fields and
+the request is *rejected* if any are found, and it is only read after the
+decision already exists. It reaches `signals.thesis`, `signals.confidence` and
+`signals.model`, and nothing else. There is no code path by which a model can
+move a stop or size a position.
+
+This matters because the validator checks internal consistency and freshness,
+not truth. A hallucinated price carrying a plausible timestamp would pass every
+gate in the system. So a language model is never allowed to supply one.
+
+If the AI says BUY and the engine says NO_TRADE, the answer is NO_TRADE.
+
+### Model choice lives in n8n
+The engine has no AI dependency, no provider SDK, and no model API key. It
+never learns which model produced the research it stores. Swapping Claude for
+GPT, Gemini, Groq or OpenRouter is an n8n credential change and touches no
+Python.
+
+### Test data is labelled
+Quotes carry their own `source` (`google_sheet`, `manual`, a vendor name),
+which is persisted and returned as `snapshot_source`. Any decision built on
+`manual`/`test`/`fixture` data comes back with `data_is_test: true` so it can
+never be mistaken for a live signal.
+
+### Security
+The decision endpoint requires a bearer token and refuses to start without
+`SENTINEL_API_TOKEN`. Neither it nor PostgreSQL publishes a host port: both are
+reachable only from the private Docker network. Secrets live in n8n credentials
+and server environment variables, never in Git.
+
+### Not built, deliberately
+No order placement, no broker or Telda integration, no browser automation, no
+scheduler inside Python. Sentinel recommends; a human executes.
+
 ## Safety
 This is decision-support software, not financial advice or a profit guarantee. The system must prefer `NO_TRADE` over an unsupported or low-quality trade.

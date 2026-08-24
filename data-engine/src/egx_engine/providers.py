@@ -171,6 +171,52 @@ class ManualFileProvider(MarketDataProvider):
         return bars
 
 
+class PayloadProvider(MarketDataProvider):
+    """Serves market data supplied in the request itself.
+
+    The orchestrator (n8n) already holds the numbers when it calls us, so there
+    is nothing to fetch. This makes that path a first-class provider rather than
+    a side door: payload data reaches the engine through the same contract as a
+    vendor feed and is validated identically.
+
+    ``name`` is ``payload`` — the *transport*. Each quote keeps its own
+    ``source`` field (``google_sheet``, ``manual``, a vendor name), because that
+    is the provenance that matters and it is what gets persisted. A spreadsheet
+    is never allowed to look like a live feed.
+
+    The provider asserts nothing about freshness or correctness. It parses.
+    """
+
+    name = "payload"
+
+    def __init__(
+        self,
+        quotes: Sequence[MarketSnapshot],
+        bars: dict[str, Sequence[DailyBar]] | None = None,
+    ):
+        self._quotes = {_normalise(q.ticker): q for q in quotes}
+        self._bars = {_normalise(k): list(v) for k, v in (bars or {}).items()}
+
+    def health(self) -> bool:
+        """Healthy when at least one quote was supplied."""
+        return bool(self._quotes)
+
+    def instruments(self) -> Sequence[dict]:
+        return []
+
+    def snapshot(self, symbols: Sequence[str]) -> list[MarketSnapshot]:
+        wanted = [_normalise(s) for s in symbols]
+        return [self._quotes[s] for s in wanted if s in self._quotes]
+
+    def daily_bars(self, symbol: str, start: date, end: date) -> list[DailyBar]:
+        ticker = _normalise(symbol)
+        if ticker not in self._bars:
+            raise MarketDataError(f"no bar history supplied for {ticker}")
+        bars = [b for b in self._bars[ticker] if start <= b.session_date <= end]
+        bars.sort(key=lambda bar: bar.session_date)
+        return bars
+
+
 PROVIDERS = ("unconfigured", "manual")
 
 
@@ -200,5 +246,6 @@ __all__ = [
     "PROVIDERS",
     "SNAPSHOT_FILE",
     "ManualFileProvider",
+    "PayloadProvider",
     "get_provider",
 ]

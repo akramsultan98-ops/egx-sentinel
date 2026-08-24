@@ -21,8 +21,16 @@ PROVIDER_ENV_VAR = "MARKET_DATA_PROVIDER"
 PROVIDER_DATA_DIR_ENV_VAR = "MARKET_DATA_DIR"
 API_KEY_ENV_VAR = "MARKET_DATA_API_KEY"
 PORTFOLIO_ID_ENV_VAR = "EGX_PORTFOLIO_ID"
+API_TOKEN_ENV_VAR = "SENTINEL_API_TOKEN"
+HTTP_HOST_ENV_VAR = "SENTINEL_HTTP_HOST"
+HTTP_PORT_ENV_VAR = "SENTINEL_HTTP_PORT"
 
 DEFAULT_PROVIDER = "unconfigured"
+
+# Inside a container this is the only way a sibling container can reach us.
+# Privacy comes from not publishing the port, not from the bind address.
+DEFAULT_HTTP_HOST = "0.0.0.0"  # noqa: S104
+DEFAULT_HTTP_PORT = 8080
 
 
 class SettingsError(RuntimeError):
@@ -47,6 +55,11 @@ class Settings:
     provider_data_dir: Path | None = None
     api_key: str | None = None
     portfolio_id: int | None = None
+    # Bearer token the HTTP shim requires. No default: an unset token means the
+    # server refuses to start rather than listening without authentication.
+    api_token: str | None = None
+    http_host: str = DEFAULT_HTTP_HOST
+    http_port: int = DEFAULT_HTTP_PORT
 
     def require_portfolio_id(self) -> int:
         if self.portfolio_id is None:
@@ -89,6 +102,20 @@ def _portfolio_id(raw: str | None) -> int | None:
     return identifier
 
 
+def _http_port(raw: str | None) -> int:
+    if raw is None:
+        return DEFAULT_HTTP_PORT
+    try:
+        port = int(raw)
+    except ValueError as exc:
+        raise SettingsError(
+            f"{HTTP_PORT_ENV_VAR} must be an integer, got {raw!r}"
+        ) from exc
+    if not (1 <= port <= 65535):
+        raise SettingsError(f"{HTTP_PORT_ENV_VAR} must be a valid port, got {port}")
+    return port
+
+
 def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     """Read settings from ``env`` (defaults to the process environment)."""
     source = os.environ if env is None else env
@@ -100,12 +127,20 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         provider_data_dir=Path(data_dir) if data_dir else None,
         api_key=_clean(source.get(API_KEY_ENV_VAR)),
         portfolio_id=_portfolio_id(_clean(source.get(PORTFOLIO_ID_ENV_VAR))),
+        api_token=_clean(source.get(API_TOKEN_ENV_VAR)),
+        http_host=_clean(source.get(HTTP_HOST_ENV_VAR)) or DEFAULT_HTTP_HOST,
+        http_port=_http_port(_clean(source.get(HTTP_PORT_ENV_VAR))),
     )
 
 
 __all__ = [
     "API_KEY_ENV_VAR",
+    "API_TOKEN_ENV_VAR",
+    "DEFAULT_HTTP_HOST",
+    "DEFAULT_HTTP_PORT",
     "DEFAULT_PROVIDER",
+    "HTTP_HOST_ENV_VAR",
+    "HTTP_PORT_ENV_VAR",
     "PORTFOLIO_ID_ENV_VAR",
     "PROVIDER_DATA_DIR_ENV_VAR",
     "PROVIDER_ENV_VAR",

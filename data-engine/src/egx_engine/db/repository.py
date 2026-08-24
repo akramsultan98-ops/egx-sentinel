@@ -586,6 +586,82 @@ class Repository:
             },
         }
 
+    # -- signals ----------------------------------------------------------
+
+    def save_signal(
+        self,
+        *,
+        risk_plan_id: int,
+        instrument_id: str,
+        action: str,
+        status: str,
+        portfolio_id: int | None = None,
+        snapshot_id: int | None = None,
+        model: str | None = None,
+        confidence: Decimal | None = None,
+        thesis: str | None = None,
+    ) -> int:
+        """Attach an AI research record to the decision it accompanied.
+
+        The table pre-dates this method by two phases and was always meant for
+        this. Note what is stored and what is not: ``model``, ``confidence``,
+        and ``thesis`` come from the research layer, while ``action`` is the
+        *engine's* verdict, not the model's opinion. The row is a note attached
+        to a decision, never a decision.
+
+        ``risk_plan_id`` is required, so research can only ever be recorded
+        against a deterministic plan that already exists.
+
+        ``confidence`` arrives as a fraction of 1 and is stored as a percentage,
+        matching the percent-typed column convention documented in
+        :mod:`egx_engine.config`.
+        """
+        if confidence is not None and not (Decimal("0") <= confidence <= Decimal("1")):
+            raise PersistenceError(
+                f"confidence must be a fraction between 0 and 1, got {confidence}"
+            )
+
+        stored_confidence = None if confidence is None else confidence * Decimal("100")
+
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO signals (risk_plan_id, portfolio_id, instrument_id,
+                                         action, status, model, confidence, thesis,
+                                         data_snapshot_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    RETURNING signal_id
+                    """,
+                    (
+                        risk_plan_id,
+                        portfolio_id,
+                        instrument_id,
+                        action,
+                        status,
+                        model,
+                        stored_confidence,
+                        thesis,
+                        snapshot_id,
+                    ),
+                )
+                return cur.fetchone()[0]
+        except psycopg.Error as exc:
+            raise PersistenceError(f"could not save signal: {exc}") from exc
+
+    def get_signal(self, signal_id: int) -> dict[str, Any] | None:
+        keys = (
+            "signal_id risk_plan_id portfolio_id instrument_id action status model "
+            "confidence thesis data_snapshot_id created_at"
+        ).split()
+        with self.conn.cursor() as cur:
+            cur.execute(
+                f"SELECT {', '.join(keys)} FROM signals WHERE signal_id = %s",
+                (signal_id,),
+            )
+            row = cur.fetchone()
+        return None if row is None else dict(zip(keys, row))
+
     # -- portfolio --------------------------------------------------------
 
     def create_portfolio(

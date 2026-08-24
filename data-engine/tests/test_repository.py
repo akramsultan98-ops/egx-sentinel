@@ -650,3 +650,74 @@ def test_bars_for_an_unregistered_instrument_are_refused(repo, conn):
     with pytest.raises(PersistenceError, match="could not save daily bars"):
         repo.save_daily_bars("GHOST", make_bars(2))
     conn.rollback()
+
+
+# --- signals (AI research attached to a deterministic plan) --------------
+
+
+def store_signal(repo, portfolio_id, **overrides):
+    snapshot_id, _, risk_plan_id, _ = store_decision(repo, portfolio_id)
+    params = dict(
+        risk_plan_id=risk_plan_id,
+        portfolio_id=portfolio_id,
+        instrument_id="TEST",
+        action="BUY",
+        status="ACTIONABLE",
+        snapshot_id=snapshot_id,
+        model="openrouter/some-model",
+        confidence=Decimal("0.82"),
+        thesis="Loan growth and a widening margin.",
+    )
+    params.update(overrides)
+    return repo.save_signal(**params), risk_plan_id
+
+
+def test_signal_round_trip(repo, portfolio_id, conn):
+    signal_id, risk_plan_id = store_signal(repo, portfolio_id)
+    conn.commit()
+
+    signal = repo.get_signal(signal_id)
+    assert signal["risk_plan_id"] == risk_plan_id
+    assert signal["model"] == "openrouter/some-model"
+    assert signal["thesis"].startswith("Loan growth")
+    assert signal["action"] == "BUY"
+    assert signal["status"] == "ACTIONABLE"
+
+
+def test_confidence_is_stored_as_a_percentage(repo, portfolio_id, conn):
+    """Matches the percent-typed column convention in egx_engine.config."""
+    signal_id, _ = store_signal(repo, portfolio_id, confidence=Decimal("0.82"))
+    conn.commit()
+    assert repo.get_signal(signal_id)["confidence"] == Decimal("82.00")
+
+
+@pytest.mark.parametrize("bad", [Decimal("1.5"), Decimal("-0.1"), Decimal("82")])
+def test_confidence_outside_zero_to_one_is_refused(repo, portfolio_id, conn, bad):
+    with pytest.raises(PersistenceError, match="fraction between 0 and 1"):
+        store_signal(repo, portfolio_id, confidence=bad)
+    conn.rollback()
+
+
+def test_research_cannot_be_recorded_without_a_risk_plan(repo, portfolio_id, conn):
+    """A signal is a note on a decision; it can never stand alone."""
+    with pytest.raises(PersistenceError, match="could not save signal"):
+        repo.save_signal(
+            risk_plan_id=999999, portfolio_id=portfolio_id, instrument_id="TEST",
+            action="BUY", status="ACTIONABLE",
+        )
+    conn.rollback()
+
+
+def test_a_signal_without_research_fields_is_allowed(repo, portfolio_id, conn):
+    """A decision made with no AI input is still a decision."""
+    signal_id, _ = store_signal(
+        repo, portfolio_id, model=None, confidence=None, thesis=None
+    )
+    conn.commit()
+
+    signal = repo.get_signal(signal_id)
+    assert signal["model"] is None and signal["confidence"] is None
+
+
+def test_unknown_signal_reads_as_none(repo):
+    assert repo.get_signal(999999) is None

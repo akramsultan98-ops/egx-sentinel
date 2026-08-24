@@ -24,8 +24,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from datetime import date, datetime, timedelta, timezone
-from decimal import Decimal
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -33,6 +33,7 @@ from .config import DEFAULT_RISK_POLICY, RiskPolicy
 from .db.connection import connect
 from .db.errors import PersistenceError
 from .db.repository import Repository
+from .decide import DecideError, decide, json_default, parse_request_json
 from .levels import ATR_PERIOD, derive_levels
 from .liquidity import LiquidityGate, TradedValueLiquidityGate
 from .pipeline import evaluate_and_persist
@@ -61,13 +62,9 @@ def default_universe_file() -> Path:
     raise UniverseError(f"could not locate {UNIVERSE_FILE}")
 
 
-def _encode(value: Any) -> str:
-    """JSON fallback: Decimals and datetimes become strings, never floats."""
-    if isinstance(value, Decimal):
-        return str(value)
-    if isinstance(value, (datetime, date)):
-        return value.isoformat()
-    raise TypeError(f"cannot serialise {type(value).__name__}")
+# Decimals and datetimes become strings, never floats — shared with the HTTP
+# shim so both transports render a price identically.
+_encode = json_default
 
 
 def _emit(payload: Any) -> None:
@@ -221,6 +218,16 @@ def scan_command(
     }
 
 
+def decide_command(conn, request_text: str) -> dict:
+    """Decide from a JSON request. The transport-independent MVP entry point.
+
+    The HTTP shim calls :func:`egx_engine.decide.decide` with the same parsed
+    payload, so piping a file through the CLI and posting it over HTTP produce
+    byte-identical decisions.
+    """
+    return decide(conn, parse_request_json(request_text))
+
+
 def _resolve_targets(
     repo: Repository,
     tickers: Sequence[str] | None,
@@ -301,6 +308,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="overrides EGX_PORTFOLIO_ID",
     )
 
+    decide_parser = subcommands.add_parser(
+        "decide",
+        help="decide from a JSON request on stdin (quotes + optional research)",
+    )
+    decide_parser.add_argument(
+        "--file",
+        default=None,
+        help="read the request from a file instead of stdin",
+    )
+
+    subcommands.add_parser(
+        "serve", help="run the internal HTTP endpoint (requires SENTINEL_API_TOKEN)"
+    )
+
     return parser
 
 
@@ -315,6 +336,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             with connect() as conn:
                 _emit(load_universe_command(conn, path))
             return 0
+
+        if args.command == "decide":
+            text = (
+                Path(args.file).read_text(encoding="utf-8")
+                if args.file
+                else sys.stdin.read()
+            )
+            with connect() as conn:
+                _emit(decide_command(conn, text))
+            return 0
+
+        if args.command == "serve":
+            from .server import serve
+
+            return serve(settings)
 
         provider = get_provider(settings)
 
@@ -337,7 +373,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
             return 0
 
-    except (SettingsError, UniverseError, PersistenceError, MarketDataError) as exc:
+    except (
+        SettingsError,
+        UniverseError,
+        PersistenceError,
+        MarketDataError,
+        DecideError,
+    ) as exc:
         # Every one of these is a safe failure: nothing was decided.
         _emit({"error": f"{type(exc).__name__}: {exc}"})
         return 1

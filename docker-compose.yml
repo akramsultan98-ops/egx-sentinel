@@ -20,5 +20,42 @@ services:
     ports:
       - "127.0.0.1:5433:5432"
 
+  sentinel:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-egx}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-egx_sentinel}
+      SENTINEL_API_TOKEN: ${SENTINEL_API_TOKEN:?SENTINEL_API_TOKEN is required}
+      SENTINEL_HTTP_PORT: "8080"
+      EGX_PORTFOLIO_ID: ${EGX_PORTFOLIO_ID:-1}
+    # No `ports:` mapping, deliberately. The endpoint is reachable only from
+    # this Docker network — which is what keeps it private, and what lets it
+    # bind 0.0.0.0 inside the container safely. Publishing a port here would
+    # put the decision endpoint on the public internet.
+    #
+    # To let an n8n container reach it, join n8n's network by uncommenting the
+    # `networks` blocks below and substituting the real network name
+    # (`docker network ls`). n8n then calls http://sentinel:8080/decide.
+    #
+    # networks:
+    #   - default
+    #   - n8n
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/health').read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+# networks:
+#   n8n:
+#     external: true
+#     name: REPLACE_WITH_YOUR_N8N_NETWORK
+
 volumes:
   postgres_data:

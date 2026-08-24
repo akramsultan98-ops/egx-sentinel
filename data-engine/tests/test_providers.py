@@ -15,12 +15,13 @@ from egx_engine.providers import (
     BAR_DIRECTORY,
     SNAPSHOT_FILE,
     ManualFileProvider,
+    PayloadProvider,
     get_provider,
 )
 from egx_engine.settings import Settings, SettingsError
 from egx_engine.validator import validate_snapshot
 
-from conftest import NOW
+from conftest import NOW, make_bars, make_snapshot
 
 SNAPSHOT = {
     "instrument_id": "TEST",
@@ -204,3 +205,66 @@ def test_an_unparseable_bar_price_is_refused(tmp_path):
 
 def test_instruments_default_to_empty_when_absent(data_dir):
     assert ManualFileProvider(data_dir).instruments() == []
+
+
+# --- payload provider -----------------------------------------------------
+
+
+def test_payload_provider_serves_supplied_quotes():
+    provider = PayloadProvider([make_snapshot(source="google_sheet")])
+
+    assert provider.name == "payload"
+    assert provider.health() is True
+    assert provider.snapshot(["TEST"])[0].last_price == Decimal("10")
+
+
+def test_payload_provider_is_unhealthy_without_quotes():
+    assert PayloadProvider([]).health() is False
+
+
+def test_payload_provider_keeps_the_declared_source():
+    """The transport is 'payload'; the provenance is whatever supplied it.
+
+    A spreadsheet must never be able to masquerade as a live feed.
+    """
+    provider = PayloadProvider([make_snapshot(source="google_sheet")])
+    assert provider.snapshot(["TEST"])[0].source == "google_sheet"
+    assert provider.name == "payload"
+
+
+def test_payload_provider_ignores_unrequested_tickers():
+    provider = PayloadProvider([make_snapshot()])
+    assert provider.snapshot(["OTHER"]) == []
+
+
+def test_payload_provider_matching_ignores_case_and_padding():
+    provider = PayloadProvider([make_snapshot()])
+    assert len(provider.snapshot([" test "])) == 1
+
+
+def test_payload_provider_serves_bars_in_range():
+    series = make_bars(10, source="google_sheet")
+    provider = PayloadProvider([make_snapshot()], {"TEST": series})
+
+    everything = provider.daily_bars("TEST", date(2000, 1, 1), date(2100, 1, 1))
+    assert len(everything) == 10
+    assert everything == sorted(everything, key=lambda b: b.session_date)
+
+    window = provider.daily_bars(
+        "TEST", series[2].session_date, series[4].session_date
+    )
+    assert len(window) == 3
+
+
+def test_payload_provider_refuses_history_it_was_not_given():
+    provider = PayloadProvider([make_snapshot()])
+    with pytest.raises(MarketDataError, match="no bar history supplied"):
+        provider.daily_bars("TEST", date(2000, 1, 1), date(2100, 1, 1))
+
+
+def test_payload_provider_snapshots_still_face_the_validator():
+    """No shortcut: payload data is validated exactly like a vendor feed."""
+    provider = PayloadProvider(
+        [make_snapshot(source="google_sheet", freshness_seconds=99999)]
+    )
+    assert validate_snapshot(provider.snapshot(["TEST"])[0], now=NOW).valid is False

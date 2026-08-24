@@ -18,7 +18,7 @@ Only `telda_available = true` instruments enter the ranking pipeline.
 
 ### The file is the operator's verified record
 The committed CSV holds the universe the operator confirmed in the Telda Invest
-app on **2026-08-25**: 243 instruments enabled, plus any instrument that is
+app on **2026-08-25**: 244 instruments enabled, plus any instrument that is
 registered but not available.
 
 It began as a candidates-only list with nothing enabled, because nobody had
@@ -56,14 +56,20 @@ Three entries are transcribed exactly as the operator supplied them and have
 **not** been normalised, because correcting a ticker is indistinguishable from
 inventing one:
 
-- `EF IH` — contains a space; no exchange symbol does. Almost certainly a
-  reading error.
 - `IRAX.CA`, `PACH.CA`, `TORA.CA` — carry a `.CA` (Cairo) vendor suffix that the
-  other 239 symbols do not.
+  other 241 symbols do not.
 
-None of them can match a real feed while written this way, so they are inert
-rather than dangerous: a quote will simply never arrive for them. They should be
-corrected at the source and reloaded.
+They cannot match a real feed while written this way, so they are inert rather
+than dangerous: a quote will simply never arrive for them. Correct them at the
+source and reload.
+
+### Held back pending verification
+`ESRS` (Ezz Steel) is registered but **not** available, and carries no
+verification date — nothing has been established either way. It was delisted
+from EGX in March 2025 and moved to an OTC facility, so its presence in the
+Telda list needs an explicit check before it can be enabled. It is deliberately
+not deleted: a registered instrument produces a persisted
+`NOT_IN_TELDA_UNIVERSE` refusal, which is more auditable than an unknown symbol.
 
 ### The gate
 `egx_engine.universe.check_universe` runs inside the decision pipeline, before

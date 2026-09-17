@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" width="800" height="1000" role="img">
+  <defs>
+      <linearGradient id="fab" x1="0.12" y1="0.04" x2="0.92" y2="0.98">
+      <stop offset="0" stop-color="#4a4e55"/>
+      <stop offset="0.42" stop-color="#383c42"/>
+      <stop offset="1" stop-color="#26292e"/>
+    </linearGradient>
+      <linearGradient id="fabDark" x1="0.12" y1="0.04" x2="0.92" y2="0.98">
+      <stop offset="0" stop-color="#383c42"/>
+      <stop offset="0.42" stop-color="#26292e"/>
+      <stop offset="1" stop-color="#1c1f23"/>
+    </linearGradient>
+      <filter id="sh" x="-25%" y="-15%" width="150%" height="140%">
+      <feDropShadow dx="0" dy="26" stdDeviation="26" flood-color="#000" flood-opacity="0.34"/>
+    </filter>
+      <filter id="grain" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="3" seed="7" result="noise"/>
+      <feColorMatrix in="noise" type="saturate" values="0" result="grey"/>
+      <feComponentTransfer in="grey" result="faint">
+        <feFuncA type="linear" slope="0.16"/>
+      </feComponentTransfer>
+      <feComposite in="faint" in2="SourceGraphic" operator="in"/>
+    </filter>
+      <clipPath id="shape"><path d="M 400 262 C 424.2 260 436 244 444 236 C 492.6 230 538 246.4 552 262 C 550 302 538 338 528 372 C 524 442 546 510 542 590 C 540 650 546 630 548 700 C 518 714 440 714 400 714 Z"/><path transform="matrix(-1 0 0 1 800 0)" d="M 400 262 C 424.2 260 436 244 444 236 C 492.6 230 538 246.4 552 262 C 550 302 538 338 528 372 C 524 442 546 510 542 590 C 540 650 546 630 548 700 C 518 714 440 714 400 714 Z"/><path d="M 548 258 C 594 288 614 262 602 452 C 594 472 546 474 540 452 C 530 302 522 432 526 368 Z"/><path transform="matrix(-1 0 0 1 800 0)" d="M 548 258 C 594 288 614 262 602 452 C 594 472 546 474 540 452 C 530 302 522 432 526 368 Z"/></clipPath></defs>
+  
+  <g filter="url(#sh)">
+      <g><path d="M 548 258 C 594 288 614 262 602 452 C 594 472 546 474 540 452 C 530 302 522 432 526 368 Z" fill="url(#fab)"/>
+     <path d="M 548 258 C 594 288 614 262 602 452 C 594 472 546 474 540 452 C 530 302 522 432 526 368 Z" fill="none" stroke="#26292e" stroke-width="2" opacity="0.5"/></g><g transform="matrix(-1 0 0 1 800 0)"><path d="M 548 258 C 594 288 614 262 602 452 C 594 472 546 474 540 452 C 530 302 522 432 526 368 Z" fill="url(#fab)"/>
+     <path d="M 548 258 C 594 288 614 262 602 452 C 594 472 546 474 540 452 C 530 302 522 432 526 368 Z" fill="none" stroke="#26292e" stroke-width="2" opacity="0.5"/></g>
+      <g><path d="M 400 262 C 424.2 260 436 244 444 236 C 492.6 230 538 246.4 552 262 C 550 302 538 338 528 372 C 524 442 546 510 542 590 C 540 650 546 630 548 700 C 518 714 440 714 400 714 Z" fill="url(#fab)"/></g><g transform="matrix(-1 0 0 1 800 0)"><path d="M 400 262 C 424.2 260 436 244 444 236 C 492.6 230 538 246.4 552 262 C 550 302 538 338 528 372 C 524 442 546 510 542 590 C 540 650 546 630 548 700 C 518 714 440 714 400 714 Z" fill="url(#fab)"/></g>
+      
+      <g clip-path="url(#shape)"><path d="M 252 690 h 296" fill="none" stroke="#5c626b" stroke-width="2.4" stroke-dasharray="7 9" stroke-linecap="round" opacity="0.4"/></g>
+      <path d="M 400 278 C 430.8 276 448 242 454 234
+      C 438 266 430 304 400 304
+      C 370 304 350 266 346 234
+      C 352 242 369.2 276 400 278 Z"
+      fill="#26292e"/>
+      <g style="mix-blend-mode:overlay" opacity="0.55" filter="url(#grain)">
+        <g><path d="M 400 262 C 424.2 260 436 244 444 236 C 492.6 230 538 246.4 552 262 C 550 302 538 338 528 372 C 524 442 546 510 542 590 C 540 650 546 630 548 700 C 518 714 440 714 400 714 Z" fill="#808080"/><path d="M 548 258 C 594 288 614 262 602 452 C 594 472 546 474 540 452 C 530 302 522 432 526 368 Z" fill="#808080"/></g><g transform="matrix(-1 0 0 1 800 0)"><path d="M 400 262 C 424.2 260 436 244 444 236 C 492.6 230 538 246.4 552 262 C 550 302 538 338 528 372 C 524 442 546 510 542 590 C 540 650 546 630 548 700 C 518 714 440 714 400 714 Z" fill="#808080"/><path d="M 548 258 C 594 288 614 262 602 452 C 594 472 546 474 540 452 C 530 302 522 432 526 368 Z" fill="#808080"/></g>
+      </g></g>
+</svg>

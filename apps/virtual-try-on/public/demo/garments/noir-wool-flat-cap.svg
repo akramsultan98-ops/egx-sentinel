@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" width="800" height="1000" role="img">
+  <defs>
+      <linearGradient id="fab" x1="0.12" y1="0.04" x2="0.92" y2="0.98">
+      <stop offset="0" stop-color="#33363c"/>
+      <stop offset="0.42" stop-color="#24272c"/>
+      <stop offset="1" stop-color="#16181c"/>
+    </linearGradient>
+      <linearGradient id="fabDark" x1="0.12" y1="0.04" x2="0.92" y2="0.98">
+      <stop offset="0" stop-color="#24272c"/>
+      <stop offset="0.42" stop-color="#16181c"/>
+      <stop offset="1" stop-color="#0d0f12"/>
+    </linearGradient>
+      <filter id="sh" x="-25%" y="-15%" width="150%" height="140%">
+      <feDropShadow dx="0" dy="26" stdDeviation="26" flood-color="#000" flood-opacity="0.34"/>
+    </filter>
+      <filter id="grain" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="3" seed="7" result="noise"/>
+      <feColorMatrix in="noise" type="saturate" values="0" result="grey"/>
+      <feComponentTransfer in="grey" result="faint">
+        <feFuncA type="linear" slope="0.16"/>
+      </feComponentTransfer>
+      <feComposite in="faint" in2="SourceGraphic" operator="in"/>
+    </filter>
+      </defs>
+  
+  <g filter="url(#sh)">
+        <path d="M 250 560 C 244 452 310 380 400 380 C 490 380 556 452 550 560 C 552 580 540 590 520 590 L 280 590 C 260 590 248 580 250 560 Z"
+          fill="url(#fab)" stroke="#16181c" stroke-width="3"/>
+        <path d="M 400 380 C 420 440 430 510 428 590" stroke="#16181c" stroke-width="2.5" fill="none" opacity="0.45"/>
+        <path d="M 400 380 C 380 440 370 510 372 590" stroke="#16181c" stroke-width="2.5" fill="none" opacity="0.45"/>
+        <path d="M 264 566 C 330 600 470 600 536 566 C 596 566 640 588 644 606 C 648 628 604 640 540 642 L 300 642 C 250 640 226 622 232 600 C 236 582 246 568 264 566 Z"
+          fill="url(#fabDark)" stroke="#16181c" stroke-width="3"/>
+        <circle cx="400" cy="384" r="14" fill="#16181c"/>
+        <g style="mix-blend-mode:overlay" opacity="0.45" filter="url(#grain)"><path d="M 250 560 C 244 452 310 380 400 380 C 490 380 556 452 550 560 C 552 580 540 590 520 590 L 280 590 C 260 590 248 580 250 560 Z" fill="#808080"/></g></g>
+</svg>

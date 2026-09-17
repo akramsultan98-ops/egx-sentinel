@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1200" width="800" height="1200" role="img">
+  <defs>
+    <linearGradient id="backdrop" x1="0.2" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#e8e6e1"/>
+      <stop offset="0.55" stop-color="#dcd9d3"/>
+      <stop offset="1" stop-color="#c8c4bd"/>
+    </linearGradient>
+    <radialGradient id="floor" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#000" stop-opacity="0.34"/>
+      <stop offset="1" stop-color="#000" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="skinG" x1="0.2" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#d9d2c7"/>
+      <stop offset="1" stop-color="#bdb4a6"/>
+    </linearGradient>
+    <linearGradient id="topG" x1="0.15" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#2f3238"/>
+      <stop offset="1" stop-color="#20232a"/>
+    </linearGradient>
+    <linearGradient id="botG" x1="0.15" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#3b3f46"/>
+      <stop offset="1" stop-color="#282b31"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="800" height="1200" fill="url(#backdrop)"/>
+  <ellipse cx="400" cy="1118" rx="230" ry="46" fill="url(#floor)"/>
+
+  <!-- head + neck -->
+  <path d="M 400 96 C 458 96 474 142 472 186 C 470 240 444 274 400 274 C 356 274 330 240 328 186 C 326 142 342 96 400 96 Z" fill="url(#skinG)" stroke="#bdb4a6" stroke-width="2" stroke-linejoin="round"/>
+  <path d="M 368 262 h 64 v 62 h -64 z" fill="url(#skinG)" stroke="#bdb4a6" stroke-width="2" stroke-linejoin="round"/>
+
+  <!-- torso base layer -->
+  <path d="M 400 308 C 458 308 526 336 538 386 C 550 444 542 546 532 622 L 268 622 C 258 546 250 444 262 386 C 274 336 342 308 400 308 Z" fill="url(#topG)" stroke="#191c21" stroke-width="2" stroke-linejoin="round"/>
+
+  <!-- arms -->
+  <path d="M 528 356 C 564 384 576 470 578 552 C 580 622 576 676 568 712 L 526 706 C 528 640 526 520 512 420 Z" fill="url(#topG)" stroke="#191c21" stroke-width="2" stroke-linejoin="round"/>
+  <path d="M 272 356 C 236 384 224 470 222 552 C 220 622 224 676 232 712 L 274 706 C 272 640 274 520 288 420 Z" fill="url(#topG)" stroke="#191c21" stroke-width="2" stroke-linejoin="round"/>
+  <path d="M 568 706 C 586 742 584 784 566 796 C 546 806 532 780 528 742 L 526 704 Z" fill="url(#skinG)" stroke="#bdb4a6" stroke-width="2" stroke-linejoin="round"/>
+  <path d="M 232 706 C 214 742 216 784 234 796 C 254 806 268 780 272 742 L 274 704 Z" fill="url(#skinG)" stroke="#bdb4a6" stroke-width="2" stroke-linejoin="round"/>
+
+  <!-- legs -->
+  <path d="M 270 610 L 392 610 L 388 1058 L 296 1058 C 284 900 272 740 270 610 Z" fill="url(#botG)" stroke="#191c21" stroke-width="2" stroke-linejoin="round"/>
+  <path d="M 530 610 L 408 610 L 412 1058 L 504 1058 C 516 900 528 740 530 610 Z" fill="url(#botG)" stroke="#191c21" stroke-width="2" stroke-linejoin="round"/>
+
+  <!-- shoes -->
+  <path d="M 290 1050 h 102 c 6 26 16 40 34 46 c 10 4 10 16 -4 18 h -142 c -10 0 -14 -8 -12 -20 c 8 -12 18 -24 22 -44 z" fill="#e9e5dd" stroke="#b9b4aa" stroke-width="2" stroke-linejoin="round"/>
+  <path d="M 510 1050 h -102 c -6 26 -16 40 -34 46 c -10 4 -10 16 4 18 h 142 c 10 0 14 -8 12 -20 c -8 -12 -18 -24 -22 -44 z" fill="#e9e5dd" stroke="#b9b4aa" stroke-width="2" stroke-linejoin="round"/>
+</svg>

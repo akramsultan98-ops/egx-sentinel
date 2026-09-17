@@ -25,6 +25,14 @@ Market Data → n8n → Python Validation/Risk Engine → Claude Decision Layer 
 - `docs/` data-source and build specifications
 - `prompts/` Claude decision prompts
 - `telegram/` user-facing message templates
+- `apps/` self-contained applications that share this repository but not this runtime
+
+## Applications
+- `apps/virtual-try-on/` — a reusable AI virtual fitting room for fashion
+  e-commerce (Next.js + TypeScript). A separate commercial product with its own
+  toolchain, dependencies and environment; it shares nothing with the EGX engine
+  and can be extracted to its own repository by moving the directory. See
+  [`apps/virtual-try-on/README.md`](apps/virtual-try-on/README.md).
 
 ## Current state
 This repository is the clean EGX-only extraction of the useful work previously developed inside `akram-ai-system`. Unrelated Digital Products / Akram AI System material is intentionally excluded.

@@ -1,0 +1,139 @@
+@import "tailwindcss";
+
+/*
+  Design tokens.
+
+  One dark palette, one accent, four type sizes of hierarchy. Everything in the
+  storefront is built from these — no ad-hoc colours in components, so a brand
+  can re-skin the whole module by editing this block.
+*/
+@theme {
+  --color-ink-950: #08080a;
+  --color-ink-900: #0b0b0d;
+  --color-ink-850: #101013;
+  --color-ink-800: #141417;
+  --color-ink-750: #191a1e;
+  --color-ink-700: #202126;
+  --color-ink-600: #2a2b31;
+  --color-ink-500: #3a3c44;
+
+  --color-bone-50: #f6f3ee;
+  --color-bone-100: #ece8e1;
+  --color-bone-300: #b9b4ab;
+  --color-bone-500: #8b867d;
+  --color-bone-600: #6d6961;
+  --color-bone-700: #4e4b45;
+
+  --color-accent-300: #e0c79c;
+  --color-accent-400: #d3b487;
+  --color-accent-500: #c7a57b;
+  --color-accent-600: #a8875f;
+  --color-accent-700: #7d6344;
+
+  --color-positive: #7fa07a;
+  --color-critical: #c97a6b;
+
+  --font-display: var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, sans-serif;
+
+  --radius-card: 14px;
+  --radius-panel: 18px;
+
+  --ease-out-soft: cubic-bezier(0.22, 0.61, 0.36, 1);
+
+  --animate-rise: rise 0.42s var(--ease-out-soft) both;
+  --animate-fade: fade 0.3s var(--ease-out-soft) both;
+  --animate-sheet: sheet 0.34s var(--ease-out-soft) both;
+  --animate-shimmer: shimmer 2.4s linear infinite;
+
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes sheet {
+    from { opacity: 0; transform: translateY(24px) scale(0.985); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes shimmer {
+    from { background-position: -160% 0; }
+    to { background-position: 260% 0; }
+  }
+}
+
+:root {
+  color-scheme: dark;
+  --page: var(--color-ink-900);
+}
+
+html,
+body {
+  background: var(--page);
+  color: var(--color-bone-100);
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* A single, quiet focus treatment used everywhere. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-accent-500);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+::selection {
+  background: var(--color-accent-500);
+  color: var(--color-ink-900);
+}
+
+/* Scrollbars inside panels should not break the dark surface. */
+.scrollarea {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-ink-600) transparent;
+}
+.scrollarea::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.scrollarea::-webkit-scrollbar-thumb {
+  background: var(--color-ink-600);
+  border-radius: 999px;
+}
+.scrollarea::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@utility text-eyebrow {
+  font-size: 11px;
+  line-height: 1;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-bone-500);
+}
+
+/* The faint vertical wash that keeps large dark pages from reading as flat. */
+@utility page-wash {
+  background-image: radial-gradient(
+      120% 70% at 50% -10%,
+      color-mix(in oklab, var(--color-accent-700) 12%, transparent) 0%,
+      transparent 62%
+    ),
+    linear-gradient(180deg, var(--color-ink-850) 0%, var(--color-ink-900) 420px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
